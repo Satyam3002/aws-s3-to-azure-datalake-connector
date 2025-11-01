@@ -1,0 +1,16 @@
+# Core UI Framework
+streamlit>=1.28.0
+
+# AWS SDK
+boto3>=1.28.0
+
+# Azure SDK
+azure-storage-file-datalake>=12.14.0
+
+# Data Processing
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# Optional: For logging/metadata
+# sqlalchemy>=2.0.0  # Uncomment if we add SQLite logging later
+
