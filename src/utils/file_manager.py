@@ -41,6 +41,8 @@ class TempFileManager:
         Returns:
             Full path to the temporary file
         """
+        # Ensure temp directory exists (it may have been cleaned up earlier)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         file_path = self.temp_dir / filename
         return str(file_path)
     

@@ -23,46 +23,78 @@ st.set_page_config(
     layout="wide"
 )
 
+# Dark + compact styling (applies regardless of Streamlit theme)
+st.markdown(
+    """
+    <style>
+      html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #0e1117 !important;
+        color: #e6e6e6 !important;
+      }
+      .block-container { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+      [data-testid="stSidebar"] { background-color: #0b0e14 !important; }
+      .stTextInput > div > div > input,
+      .stPassword > div > div > input,
+      .stSelectbox > div > div > select { height: 2.1rem; }
+      .stButton > button { padding: 0.35rem 0.8rem; border-radius: 6px; }
+      .stDataFrame { border: 1px solid #2a2f3a; border-radius: 6px; }
+      .stMetric { background: #121621; padding: 0.6rem; border-radius: 8px; border: 1px solid #1b2030; }
+      .st-expander { background: #0b0f18 !important; border: 1px solid #1b2030; border-radius: 8px; }
+      .stMarkdown, .stHeader, .stSubheader { margin-bottom: 0.5rem; }
+      hr { border-color: #1b2030; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Title
-st.title("🔄 AWS S3 to Azure Data Lake Connector")
-st.markdown("Transfer files from AWS S3 to Azure Data Lake Storage Gen2")
+st.title("🔄 AWS S3 → Azure Data Lake Connector")
+st.markdown("Easily browse S3 files and upload them to ADLS Gen2.")
+st.divider()
 
 # Sidebar for AWS credentials
-st.sidebar.header("AWS Configuration")
+st.sidebar.header("🔐 AWS Configuration")
 aws_access_key_id = st.sidebar.text_input(
     "AWS Access Key ID",
     type="password",
-    help="Enter your AWS Access Key ID"
+    help="Enter your AWS Access Key ID",
+    key="aws_access_key_id"
 )
 aws_secret_access_key = st.sidebar.text_input(
     "AWS Secret Access Key",
     type="password",
-    help="Enter your AWS Secret Access Key"
+    help="Enter your AWS Secret Access Key",
+    key="aws_secret_access_key"
 )
 aws_region = st.sidebar.text_input(
     "AWS Region",
     value="us-east-1",
-    help="Enter AWS region (e.g., us-east-1, eu-west-1)"
+    help="Enter AWS region (e.g., us-east-1, eu-west-1)",
+    key="aws_region"
 )
 s3_bucket_name = st.sidebar.text_input(
     "S3 Bucket Name",
-    help="Enter the name of your S3 bucket"
+    help="Enter the name of your S3 bucket",
+    key="s3_bucket_name"
 )
 
 # Sidebar for Azure configuration
-st.sidebar.header("Azure Configuration")
+st.sidebar.header("🔐 Azure Configuration")
 azure_storage_account_name = st.sidebar.text_input(
     "Azure Storage Account Name",
-    help="Enter your Azure Storage Account name"
+    help="Enter your Azure Storage Account name",
+    key="azure_storage_account_name"
 )
 azure_account_key = st.sidebar.text_input(
     "Azure Account Key",
     type="password",
-    help="Enter your Azure Storage Account Key"
+    help="Enter your Azure Storage Account Key",
+    key="azure_account_key"
 )
 azure_container_name = st.sidebar.text_input(
     "Azure Container Name",
-    help="Enter the target container name in ADLS"
+    help="Enter the target container name in ADLS",
+    key="azure_container_name"
 )
 
 # Initialize session state for storing file list
@@ -76,7 +108,7 @@ if 'temp_file_manager' not in st.session_state:
     st.session_state.temp_file_manager = None
 
 # Main content area
-st.header("File Transfer")
+st.header("✨ File Transfer")
 
 # Button to list files
 col1, col2 = st.columns(2)
@@ -144,12 +176,19 @@ if list_files_btn:
 if st.session_state.s3_files:
     st.subheader("📁 Available Files in S3 Bucket")
     
+    # Summary metrics
+    total_files = len(st.session_state.s3_files)
+    total_size_mb = round(sum(f['size_mb'] for f in st.session_state.s3_files), 2)
+    c1, c2 = st.columns(2)
+    c1.metric("Files", f"{total_files}")
+    c2.metric("Total Size", f"{total_size_mb} MB")
+
     # Create a table to display files with sizes
     file_data = {
         "File Name": [f['name'] for f in st.session_state.s3_files],
         "Size (MB)": [f['size_mb'] for f in st.session_state.s3_files]
     }
-    st.dataframe(file_data, use_container_width=True)
+    st.dataframe(file_data, use_container_width=True, height=260)
     
     # File selection area
     st.subheader("Selected Files")
@@ -157,7 +196,8 @@ if st.session_state.s3_files:
     selected_files = st.multiselect(
         "Select files to transfer",
         options=file_options,
-        help="Choose one or more files to upload to Azure"
+        help="Choose one or more files to upload to Azure",
+        key="selected_files"
     )
 else:
     # File selection area (empty if no files listed)
@@ -165,15 +205,17 @@ else:
     selected_files = st.multiselect(
         "Select files to transfer",
         options=[],
-        help="Click 'List Files' first to see available files"
+        help="Click 'List Files' first to see available files",
+        key="selected_files"
     )
 
 # Optional: Format conversion checkbox
-st.subheader("Transfer Options")
-convert_to_parquet = st.checkbox(
+st.subheader("⚙️ Transfer Options")
+convert_to_parquet_opt = st.checkbox(
     "Convert CSV/JSON to Parquet format",
     value=False,
-    help="Enable to automatically convert CSV/JSON files to Parquet before upload"
+    help="Enable to automatically convert CSV/JSON files to Parquet before upload",
+    key="convert_to_parquet_opt"
 )
 
 # Button to upload
@@ -195,9 +237,8 @@ if upload_btn:
     elif not azure_storage_account_name or not azure_account_key or not azure_container_name:
         st.error("❌ Please fill in all Azure credentials in the sidebar!")
     else:
-        # Initialize temp file manager
-        if st.session_state.temp_file_manager is None:
-            st.session_state.temp_file_manager = TempFileManager()
+        # Always start with a fresh temp directory for each upload run
+        st.session_state.temp_file_manager = TempFileManager()
         
         temp_manager = st.session_state.temp_file_manager
         s3_connector = st.session_state.s3_connector
@@ -234,7 +275,7 @@ if upload_btn:
                 final_path = local_temp_path
                 final_filename = filename
                 
-                if convert_to_parquet and file_ext in ['csv', 'json']:
+                if convert_to_parquet_opt and file_ext in ['csv', 'json']:
                     # Convert to Parquet
                     parquet_filename = filename.rsplit('.', 1)[0] + '.parquet'
                     parquet_path = temp_manager.create_temp_file(parquet_filename)
@@ -288,7 +329,7 @@ if upload_btn:
             
             # Store conversion info
             st.session_state.converted_files = converted_files
-            st.session_state.convert_to_parquet_option = convert_to_parquet
+            st.session_state.convert_to_parquet_option = convert_to_parquet_opt
             
             # Now upload to Azure ADLS
             st.subheader("📤 Uploading to Azure ADLS Gen2...")
@@ -363,10 +404,11 @@ if upload_btn:
                                     size_info = file_info['message'].split('(')[1].rstrip(')')
                                 st.write(f"✅ **{file_info['filename']}** → `{file_info['remote_path']}` {size_info}")
                         
-                        # Cleanup temporary files
+                        # Cleanup temporary files and reset manager
                         try:
                             if st.session_state.temp_file_manager:
                                 st.session_state.temp_file_manager.cleanup()
+                                st.session_state.temp_file_manager = None
                                 st.info("🧹 Temporary files cleaned up successfully!")
                         except Exception as e:
                             st.warning(f"⚠️ Could not cleanup temp files: {str(e)}")

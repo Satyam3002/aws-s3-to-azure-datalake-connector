@@ -7,7 +7,38 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List
+
+
+def _read_csv_with_fallbacks(path: str, encodings: List[str]) -> Tuple[bool, str, pd.DataFrame | None]:
+    for enc in encodings:
+        try:
+            df = pd.read_csv(path, encoding=enc)
+            return True, enc, df
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            return False, f"CSV read error: {str(e)}", None
+    return False, "CSV decode error: tried encodings: " + ", ".join(encodings), None
+
+
+def _read_json_with_fallbacks(path: str, encodings: List[str]) -> Tuple[bool, str, pd.DataFrame | None]:
+    for enc in encodings:
+        try:
+            df = pd.read_json(path, encoding=enc, lines=False)
+            return True, enc, df
+        except UnicodeDecodeError:
+            continue
+        except ValueError:
+            # Try newline-delimited JSON
+            try:
+                df = pd.read_json(path, encoding=enc, lines=True)
+                return True, enc, df
+            except Exception:
+                continue
+        except Exception as e:
+            return False, f"JSON read error: {str(e)}", None
+    return False, "JSON decode error: tried encodings: " + ", ".join(encodings), None
 
 
 def convert_to_parquet(input_file: str, output_file: str) -> Tuple[bool, str]:
@@ -30,12 +61,21 @@ def convert_to_parquet(input_file: str, output_file: str) -> Tuple[bool, str]:
         
         # Determine file type by extension
         file_ext = input_path.suffix.lower()
-        
-        # Read file based on extension
+
+        # Common encodings to try when UTF-8 fails
+        encodings_to_try = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+
+        # Read file based on extension with encoding fallbacks
         if file_ext == '.csv':
-            df = pd.read_csv(input_file)
+            ok, used, df_or_msg = _read_csv_with_fallbacks(input_file, encodings_to_try)
+            if not ok:
+                return False, f"Conversion error: {df_or_msg}"
+            df = df_or_msg
         elif file_ext == '.json':
-            df = pd.read_json(input_file)
+            ok, used, df_or_msg = _read_json_with_fallbacks(input_file, encodings_to_try)
+            if not ok:
+                return False, f"Conversion error: {df_or_msg}"
+            df = df_or_msg
         else:
             return False, f"Unsupported file type: {file_ext}. Only CSV and JSON are supported."
         
