@@ -13,6 +13,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from aws_connector.s3_client import S3Connector
 from azure_connector.adls_client import ADLSConnector
 from utils.file_converter import convert_to_parquet, get_file_extension
+from utils.checksum import md5_file
 from utils.file_manager import TempFileManager
 import os
 
@@ -209,14 +210,23 @@ else:
         key="selected_files"
     )
 
-# Optional: Format conversion checkbox
+# Optional: Transfer options
 st.subheader("⚙️ Transfer Options")
-convert_to_parquet_opt = st.checkbox(
-    "Convert CSV/JSON to Parquet format",
-    value=False,
-    help="Enable to automatically convert CSV/JSON files to Parquet before upload",
-    key="convert_to_parquet_opt"
-)
+cols_opts = st.columns(2)
+with cols_opts[0]:
+    convert_to_parquet_opt = st.checkbox(
+        "Convert CSV/JSON to Parquet",
+        value=False,
+        help="Convert CSV or JSON files to Parquet before upload",
+        key="convert_to_parquet_opt"
+    )
+with cols_opts[1]:
+    verify_checksum_opt = st.checkbox(
+        "Verify checksum (MD5)",
+        value=False,
+        help="After upload, compute and compare MD5 to ensure integrity",
+        key="verify_checksum_opt"
+    )
 
 # Button to upload
 with col2:
@@ -402,7 +412,34 @@ if upload_btn:
                                 size_info = ""
                                 if '(' in file_info['message']:
                                     size_info = file_info['message'].split('(')[1].rstrip(')')
-                                st.write(f"✅ **{file_info['filename']}** → `{file_info['remote_path']}` {size_info}")
+                                line = f"✅ **{file_info['filename']}** → `{file_info['remote_path']}` {size_info}"
+                                st.write(line)
+
+                        # Optional checksum verification
+                        if verify_checksum_opt:
+                            st.subheader("🔎 Verifying checksums (MD5)")
+                            verify_progress = st.progress(0)
+                            verify_results = []
+                            for idx, file_info in enumerate(downloaded_files):
+                                local_ok, local_md5 = md5_file(file_info['local_path'])
+                                if not local_ok:
+                                    verify_results.append(f"{file_info['filename']}: local MD5 error - {local_md5}")
+                                    continue
+                                remote_ok, remote_md5 = adls_connector.compute_remote_md5(
+                                    container_name=azure_container_name,
+                                    remote_path=f"/raw_data/{file_info['filename']}"
+                                )
+                                if not remote_ok:
+                                    verify_results.append(f"{file_info['filename']}: remote MD5 error - {remote_md5}")
+                                else:
+                                    if local_md5 == remote_md5:
+                                        verify_results.append(f"✅ {file_info['filename']}: checksum OK")
+                                    else:
+                                        verify_results.append(f"❌ {file_info['filename']}: checksum MISMATCH")
+                                verify_progress.progress((idx + 1) / len(downloaded_files))
+                            verify_progress.empty()
+                            for line in verify_results:
+                                st.write(line)
                         
                         # Cleanup temporary files and reset manager
                         try:

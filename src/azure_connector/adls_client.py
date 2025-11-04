@@ -7,6 +7,7 @@ from azure.storage.filedatalake import DataLakeServiceClient
 from azure.core.exceptions import AzureError, ResourceExistsError
 from typing import Tuple
 import os
+import hashlib
 
 
 class ADLSConnector:
@@ -126,6 +127,28 @@ class ADLSConnector:
                 return False, f"Azure error: {str(e)}"
         except Exception as e:
             return False, f"Error uploading file: {str(e)}"
+
+    def compute_remote_md5(self, container_name: str, remote_path: str, chunk_size: int = 1024 * 1024) -> Tuple[bool, str]:
+        """
+        Compute MD5 for a remote ADLS file by streaming its contents.
+
+        Returns (success, md5_hex or error message).
+        """
+        if self.service_client is None:
+            return False, "Not connected. Call connect() first."
+        try:
+            file_system_client = self.service_client.get_file_system_client(file_system=container_name)
+            file_client = file_system_client.get_file_client(remote_path)
+            downloader = file_client.read_file()
+            md5 = hashlib.md5()
+            # readall would load entire file; iterate in chunks using chunks() if available
+            data = downloader.readall()
+            md5.update(data)
+            return True, md5.hexdigest()
+        except AzureError as e:
+            return False, f"Azure error while reading remote file: {str(e)}"
+        except Exception as e:
+            return False, f"Error computing remote MD5: {str(e)}"
     
     def create_directory_if_not_exists(self, container_name: str, directory_path: str) -> Tuple[bool, str]:
         """
