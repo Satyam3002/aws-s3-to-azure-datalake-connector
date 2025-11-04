@@ -420,23 +420,29 @@ if upload_btn:
                             st.subheader("🔎 Verifying checksums (MD5)")
                             verify_progress = st.progress(0)
                             verify_results = []
-                            for idx, file_info in enumerate(downloaded_files):
-                                local_ok, local_md5 = md5_file(file_info['local_path'])
-                                if not local_ok:
-                                    verify_results.append(f"{file_info['filename']}: local MD5 error - {local_md5}")
-                                    continue
-                                remote_ok, remote_md5 = adls_connector.compute_remote_md5(
-                                    container_name=azure_container_name,
-                                    remote_path=f"/raw_data/{file_info['filename']}"
-                                )
-                                if not remote_ok:
-                                    verify_results.append(f"{file_info['filename']}: remote MD5 error - {remote_md5}")
-                                else:
-                                    if local_md5 == remote_md5:
-                                        verify_results.append(f"✅ {file_info['filename']}: checksum OK")
+                            
+                            # Check if method exists (for backwards compatibility)
+                            if not hasattr(adls_connector, 'compute_remote_md5'):
+                                verify_results.append("⚠️ Checksum verification not available (method not found)")
+                            else:
+                                for idx, file_info in enumerate(downloaded_files):
+                                    local_ok, local_md5 = md5_file(file_info['local_path'])
+                                    if not local_ok:
+                                        verify_results.append(f"{file_info['filename']}: local MD5 error - {local_md5}")
+                                        continue
+                                    remote_ok, remote_md5 = adls_connector.compute_remote_md5(
+                                        container_name=azure_container_name,
+                                        remote_path=f"/raw_data/{file_info['filename']}"
+                                    )
+                                    if not remote_ok:
+                                        verify_results.append(f"{file_info['filename']}: remote MD5 error - {remote_md5}")
                                     else:
-                                        verify_results.append(f"❌ {file_info['filename']}: checksum MISMATCH")
-                                verify_progress.progress((idx + 1) / len(downloaded_files))
+                                        if local_md5 == remote_md5:
+                                            verify_results.append(f"✅ {file_info['filename']}: checksum OK")
+                                        else:
+                                            verify_results.append(f"❌ {file_info['filename']}: checksum MISMATCH")
+                                    verify_progress.progress((idx + 1) / len(downloaded_files))
+                            
                             verify_progress.empty()
                             for line in verify_results:
                                 st.write(line)

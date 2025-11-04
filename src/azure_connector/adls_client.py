@@ -131,22 +131,42 @@ class ADLSConnector:
     def compute_remote_md5(self, container_name: str, remote_path: str, chunk_size: int = 1024 * 1024) -> Tuple[bool, str]:
         """
         Compute MD5 for a remote ADLS file by streaming its contents.
-
-        Returns (success, md5_hex or error message).
+        
+        Args:
+            container_name: Name of the container/filesystem
+            remote_path: Path to file in ADLS (e.g., '/raw_data/filename.parquet')
+            chunk_size: Size of chunks to read (default 1MB)
+        
+        Returns:
+            Tuple of (success: bool, md5_hex or error message: str)
         """
         if self.service_client is None:
             return False, "Not connected. Call connect() first."
+        
         try:
             file_system_client = self.service_client.get_file_system_client(file_system=container_name)
             file_client = file_system_client.get_file_client(remote_path)
-            downloader = file_client.read_file()
+            
+            # Download file in chunks to compute MD5
             md5 = hashlib.md5()
-            # readall would load entire file; iterate in chunks using chunks() if available
-            data = downloader.readall()
-            md5.update(data)
+            downloader = file_client.download_file()
+            
+            # Read file in chunks to avoid memory issues with large files
+            while True:
+                chunk = downloader.read(chunk_size)
+                if not chunk:
+                    break
+                md5.update(chunk)
+            
             return True, md5.hexdigest()
+            
         except AzureError as e:
-            return False, f"Azure error while reading remote file: {str(e)}"
+            if "NotFound" in str(e) or "does not exist" in str(e):
+                return False, f"File not found: {remote_path}"
+            elif "Authorization" in str(e):
+                return False, "Access denied. Check your Azure credentials."
+            else:
+                return False, f"Azure error while reading remote file: {str(e)}"
         except Exception as e:
             return False, f"Error computing remote MD5: {str(e)}"
     
